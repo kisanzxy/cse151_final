@@ -17,206 +17,288 @@
 using namespace std;
 using namespace Eigen;
 using Eigen::MatrixXd;
+const int num_words = 4003;
 struct com {
-	bool operator ()(pair<string,double> a, pair<string, double> b) const {
+	bool operator ()(pair<pair<double, double>, double> a, pair<pair<double, double>, double> b) const {
 		return a.second < b.second;
 	}
 };
-
-
-int c0 = 0;
-int c1 = 0;
-int times = 0;
-//int decimal_compare(double a, double b) {
-//	int c1 = a * 10000;
-//	int c2 = b * 10000;
-//	if (c1 - c2 == 0) {
-//		return 1;
-//	}
-//	else
-//		return 0;
-//}
-bool decimal_compare(double a, double b) {
-	int c1 = a * 10000;
-	int c2 = b * 10000;
-	if (c1 - c2 == 0) {
-		return true;
+int h_plus(int i, VectorXd train_v) {
+	if (train_v(i) == 1) {
+		return 1;
 	}
-	else
-		return false;
+	else {
+		return -1;
+	}
 }
-double get_a(int o, int s, MatrixXd v, int a, map<int, MatrixXd> state_map) {
+int h_minus(int i, VectorXd train_v) {
+	if (train_v(i) == 1) {
+		return -1;
+	}
+	else {
+		return 1;
+	}
+}
+int indicator_h_plus(VectorXd train_v, int i, double label) {
+	if (h_plus(i, train_v) != label) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+int indicator_h_minus(VectorXd train_v, int i, double label) {
+	if (h_minus(i, train_v) != label) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+pair<double, double> get_err(int n, vector<pair<VectorXd, double>> trainset, vector<double> w_i) {
+	vector<double> h_t;
+	double res_plus = 0;
+	double res_minus = 0;
+	for (int i = 0; i < trainset.size(); i++) {
+		res_plus += w_i[i] * indicator_h_plus(trainset[i].first, n, trainset[i].second);
+		res_minus += w_i[i] * indicator_h_minus(trainset[i].first, n, trainset[i].second);
+	}
+
+	return make_pair(res_plus, res_minus);
+}
+double getsign(double n) {
+	if (n >= 0.0) {
+		return 1;
+	}
+	else {
+		return -1;
+	}
+}
+double error_h_pos(int word, vector<pair<VectorXd, double>> trainset, vector<double> w_i) {
 	double res = 0.0;
-	for (int s_prime = 1; s_prime < 81; s_prime++) {
-		res += state_map[a](s, s_prime)*v(s_prime);
+	for (int i = 0; i < trainset.size(); i++) {
+		res += (w_i[i] * indicator_h_plus(trainset[i].first, word, trainset[i].second));
 	}
 	return res;
 }
+double error_h_neg(int word, vector<pair<VectorXd, double>> trainset, vector<double> w_i) {
+	double res = 0.0;
+	for (int i = 0; i < trainset.size(); i++) {
+		res += (w_i[i] * indicator_h_minus(trainset[i].first, word, trainset[i].second));
+	}
+	return res;
+}
+double boosting(vector<pair<VectorXd, double>> trainset, vector<pair<VectorXd, double>> testset, int iter) {
+	double err = 0.0;
+	double index = 0.0;
+	double initial_w = 1.0 / 4003.0;
+	vector<double> w_i;
+	for (int i = 0; i < trainset.size(); i++) {
+		w_i.push_back(initial_w);
+	}
+	//initialize d
 
-double max_a(int o, int s, MatrixXd v, map<int, MatrixXd> state_map) {
-	double max = -numeric_limits<double>::max();
-	for (int a = 0; a < 4; a++) {
-		double term = get_a(o, s, v, a, state_map);
-		if (term > max) {
-			max = term;
+	vector<double> D_i;
+	for (int i = 0; i < trainset.size(); i++) {
+		D_i.push_back(1.0 / double(trainset.size()));
+	}
+	vector<double> h_t;
+	for (int i = 0; i < iter; i++) {
+		h_t.push_back(0);
+	}
+	vector<double> At;
+	for (int i = 0; i < iter; i++) {
+		At.push_back(0);
+	}
+	//for t = 1...T
+	for (int t = 0; t < iter; t++) {
+		//calculate err
+		vector<pair<pair<double, double>, double>> error_v;
+
+		////////////////////////////////////////////////////////////////
+		//find the best accuracy
+		double error = numeric_limits<double>::max();
+		int id = 0;
+		int indicator = 0;
+		cout << num_words << endl;
+		
+		for (int i = 0; i < num_words; i++) {
+			int h_indicator = 0;
+			double compare = 0.0;
+			double err_neg = error_h_neg(i, trainset, w_i);
+			double err_pos = error_h_pos(i, trainset, w_i);
+			if (err_neg > err_pos) {
+				h_indicator = 1;
+				compare = err_pos;
+			}
+			else {
+				h_indicator = -1;
+				compare = err_neg;
+			}
+			if (compare < error) {
+				error = compare;
+				id = i;
+				indicator = h_indicator;
+			}
+			
 		}
-	}
-	return max;
-}
-double get_argmax(int o, int s, MatrixXd v, map<int, MatrixXd> state_map) {
-	double max = -numeric_limits<double>::max();
-	double a_res = -1.0;
-	for (int a = 0; a < 4; a++) {
-		double term = get_a(o, s, v, a, state_map);
-		if (term > max) {
-			max = term;
-			a_res = a;
+
+		
+
+		h_t[t] = indicator;
+		index = id;
+		cout << "mei cuo a" << h_t[t]<<" " << id <<" "<< error << endl;
+		
+		error = 0.1;
+		//index = error_v[0].first.first;
+
+		//at
+		if (error == 1.0||error ==0.0) {
+			At[t] = 0.0;
 		}
+		else {
+			At[t] = (1.0 / 2.0)*log((1.0 - error) / error);
+		}
+		cout << "at " << t << "th iteration " << At[t] << " and error " << error << endl;
+
+
+		//Z_t
+		double Zt = 0.0;
+		vector<double> w_tp1;//wt+1
+		
+		for (int i = 0; i < trainset.size(); i++) {
+			double w_t = 0.0;
+			if (h_t[t] == 1) {
+				double power = -1.0*(At[t] * trainset[i].second*h_plus(index, trainset[i].first));
+				w_t = D_i[i] * exp(power);
+			}
+			if (h_t[t] == -1) {
+				double power = -1.0*(At[t] * trainset[i].second*h_minus(index, trainset[i].first));
+				w_t = D_i[i] * exp(power);
+			}
+			w_i[i] = w_t;
+			Zt += w_t;
+		}
+		for (int i = 0; i < trainset.size(); i++) {
+			D_i[i] = w_i[i] / Zt;
+		}
+		double k = 0;
+		for (int i = 0; i < trainset.size(); i++) {
+			k += D_i[i];
+		}
+		
 	}
-	return a_res;
-}
-// to be rethought
-pair<MatrixXd,MatrixXd> optimal_state_value(vector<double> rewards, map<int, MatrixXd> state_map) {
-	MatrixXd res(9, 9);
-	MatrixXd direction(9, 9);
-	VectorXd v(81);
-	VectorXd d(81);
-	map<int, VectorXd> v_star;
-	for (int i = 0; i < 81; i++) {
-		v(i) = 0.0;
-	}
-	double difference = 1.0;
-	int o = 1;
-	
-	while(difference != 0.0 ){
-		difference = 0.0;
-		VectorXd v_copy(81);
-		v_copy = v;
-		for (int s = 0; s < 81; s++) {
-			v(s) = rewards[s] + 0.99*max_a(o,s,v_copy,state_map);//
-			if (!decimal_compare(v(s), v_copy(s))) {
-				difference = 1.0;
+	for (int i = 0; i < testset.size(); i++) {
+		VectorXd x = testset[i].first;
+		double H = 0.0;
+		for (int t = 0; t < iter; t++) {
+			//cout << h_t[t] << endl;
+			if (h_t[t] == 1) {
+				H += At[t] * h_plus(index, testset[i].first);
+			}
+			if (h_t[t] == -1) {
+				H += At[t] * h_minus(index, testset[i].first);
 			}
 		}
-		o++;
-	}
-	for (int i = 0; i < 81; i++) {
-		d(i) = get_argmax(o, i, v, state_map);
-	}
-	for (int i = 0; i < 9; i++) {
-		for (int j = 0; j < 9; j++) {
-			res(j, i) = v(9 * i + j);
-			direction(j, i) = d(9 * i + j);
+		double sign = getsign(H);
+		if (sign != testset[i].second) {
+			err += 1.0;
 		}
 	}
-	return make_pair(res,direction);
+	err = err / testset.size();
+	return err;
 }
 
 int main()
 {
-	//vector<pair<VectorXd, double>> trainset;
-	MatrixXd stateM_a1(81, 81);
-	stateM_a1.setZero();
-	MatrixXd stateM_a2(81, 81);
-	stateM_a2.setZero();
-	MatrixXd stateM_a3(81, 81);
-	stateM_a3.setZero();
-	MatrixXd stateM_a4(81, 81);
-	stateM_a4.setZero();
-	vector<double> rewards_v;
+	VectorXd train_v(4003);
+	MatrixXd train_M(450, 4004);
+	vector<pair<VectorXd, double>> trainset;
 
-	
-	const char* rewards;
-	const char* prob_a4;
-	const char* prob_a3;
-	const char* prob_a2;
-	const char* prob_a1;
+	VectorXd test_v(4003);
+	MatrixXd test_M(129, 4004);
+	vector<pair<VectorXd, double>> testset;
+
+	vector<string> dictionary;
+	const char* train;
+	const char* test;
+	const char* dict;
+
 	MatrixXd transitionM(27, 27);
-	rewards = "rewards.txt";
-	prob_a4 = "prob_a4.txt";
-	prob_a3 = "prob_a3.txt";
-	prob_a2 = "prob_a2.txt";
-	prob_a1 = "prob_a1.txt";
-	ifstream fp_rewards(rewards);
-	ifstream fp_prob_a4(prob_a4);
-	ifstream fp_prob_a3(prob_a3);
-	ifstream fp_prob_a2(prob_a2);
-	ifstream fp_prob_a1(prob_a1);
+	train = "pa5train.txt";
+	test = "pa5test.txt";
+	dict = "pa5dictionary.txt";
+
+	ifstream fp_train(train);
+	ifstream fp_test(test);
+	ifstream fp_dict(dict);
+
 	//streams
-	if (!fp_rewards)
+	if (!fp_train)
 		cout << "test fails" << endl;
-	if (!fp_prob_a4)
+	if (!fp_test)
 		cout << "test fails" << endl;
-	if (!fp_prob_a3)
+	if (!fp_dict)
 		cout << "test fails" << endl;
-	if (!fp_prob_a2)
-		cout << "test fails" << endl;
-	if (!fp_prob_a1)
-		cout << "test fails" << endl;
+
 	double num = 0;
 	int row = 0;
 	int col = 0;
-	
-	while (fp_rewards >> num) {
-		rewards_v.push_back(num);
+
+	while (fp_train >> num) {
+		double label = 0;
+		if (col < 4004) {
+			if (col == 4003) {
+				label = num;
+			}
+			else {
+				train_v(col) = num;
+			}
+			train_M(row, col) = num;
+			col++;
+		}
+		if (col >= 4004) {
+			col = 0;
+			row++;
+			trainset.push_back(make_pair(train_v, label));
+		}
 	}
-	for (int i = 0; i < rewards_v.size(); i++) {
-		cout << rewards_v[i];
-	}
-	cout << rewards_v.size()<< endl;
-	fp_rewards.close();
+
+	fp_train.close();
 	//a1
 	num = 0;
 	row = 0;
 	col = 0;
-	while (fp_prob_a1 >> row && fp_prob_a1 >> col && fp_prob_a1 >> num) {
-		stateM_a1(row - 1.0, col - 1.0) = num;
-	}
-	fp_prob_a1.close();
-	//checking if parse is correct
-	/*for (int i = 0; i < 81; i++) {
-		double sum = 0;
-		for (int j = 0; j < 81; j++) {
-			sum += stateM_a1(i, j);
+	while (fp_test >> num) {
+		double label = 0;
+		if (col < 4004) {
+			if (col == 4003) {
+				label = num;
+			}
+			else {
+				test_v(col) = num;
+			}
+			test_M(row, col) = num;
+			col++;
 		}
-		cout << sum << endl;
-	}*/
-	//a2
-	num = 0;
-	row = 0;
-	col = 0;
-	while (fp_prob_a2 >> row && fp_prob_a2 >> col && fp_prob_a2 >> num) {
-		stateM_a2(row - 1.0, col - 1.0) = num;
+		if (col >= 4004) {
+			col = 0;
+			row++;
+			testset.push_back(make_pair(test_v, label));
+		}
 	}
-	fp_prob_a2.close();
 
-	//a3
-	num = 0;
-	row = 0;
-	col = 0;
-	while (fp_prob_a3 >> row && fp_prob_a3 >> col && fp_prob_a3 >> num) {
-		stateM_a3(row - 1.0, col - 1.0) = num;
+	fp_test.close();
+
+	string word;
+	while (fp_dict >> word) {
+
+		dictionary.push_back(word);
 	}
-	fp_prob_a3.close();
+	//cout << dictionary.size() << endl;
+	fp_dict.close();
 
-	//a4
-	num = 0;
-	row = 0;
-	col = 0;
-	while (fp_prob_a4 >> row && fp_prob_a4 >> col && fp_prob_a4 >> num) {
-		stateM_a4(row - 1.0, col - 1.0) = num;
-	}
-	fp_prob_a4.close();
-
-	map<int, MatrixXd> state_map;
-	state_map.insert(make_pair(0, stateM_a1));
-	state_map.insert(make_pair(1, stateM_a2));
-	state_map.insert(make_pair(2, stateM_a3));
-	state_map.insert(make_pair(3, stateM_a4));
-
-	cout << optimal_state_value(rewards_v, state_map).first << endl;
-	cout << optimal_state_value(rewards_v, state_map).second << endl;
-	
+	cout << boosting(trainset, trainset, 4);
 	int lala;
-	cin>>lala;
+	cin >> lala;
 }
